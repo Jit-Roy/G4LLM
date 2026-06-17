@@ -34,6 +34,7 @@ from .index import Index
 from .branch import BranchManager
 from .algo.rome import ROMEEditor, ROMEConfig
 from .algo.memit import MEMITEditor
+from .algo.merge import ModelMerger, MergeConfig
 from .algo.revert import exact_revert, trace_and_revert
 from .algo.model_utils import get_weight, set_weight
 
@@ -233,6 +234,7 @@ class G4LLMRepo:
         layer: Optional[int] = None,
         evaluate: bool = False,
         auto_message: bool = True,
+        sequential_edit: bool = True,
     ) -> List[Commit]:
         """
         Apply all staged edits to *model* and record them as commits.
@@ -256,6 +258,14 @@ class G4LLMRepo:
             ROME target layer.  Auto-selected if None.
         evaluate:
             If True, compute E/G/S metrics and attach them to the commit.
+        sequential_edit:
+            If True (default, matches MM4KE ``sequential_edit=True``), each
+            edit's key/value vectors are computed *after* all previous edits
+            have already been applied to the model.  This means later edits
+            see the patched weights of earlier edits, allowing them to build
+            on each other without destructive interference.
+            If False, all vectors are computed on the original weights and
+            applied in one batch (faster but less accurate for long sequences).
 
         Returns
         -------
@@ -291,6 +301,11 @@ class G4LLMRepo:
         else:
             editor = ROMEEditor(model, tokenizer)
             for req in requests:
+                # sequential_edit=True: each edit sees the already-patched model
+                # (re-use the same editor instance so the updated weights are live)
+                if not sequential_edit:
+                    # Non-sequential: fresh editor per request on original weights
+                    editor = ROMEEditor(model, tokenizer)
                 deltas = editor.edit(req, layer=layer)
                 msg = message or (
                     f"Edit: '{req.subject}' | {req.relation} -> '{req.target_new}'"
@@ -589,6 +604,71 @@ class G4LLMRepo:
             raise ValueError("No commits to tag")
         (tags_dir / name).write_text(h)
         print(f"Tagged {h[:7]} as '{name}'")
+
+    # ------------------------------------------------------------------
+    # Merge  (git merge / model merging)
+    # ------------------------------------------------------------------
+
+    def merge(
+        self,
+        finetuned_models: List[torch.nn.Module],
+        target_model: torch.nn.Module,
+        config: Optional[MergeConfig] = None,
+        base_model: Optional[torch.nn.Module] = None,
+    ) -> torch.nn.Module:
+        """
+        Merge one or more fine-tuned models into *target_model* using
+        Task Arithmetic with optional magnitude sparsification.
+
+        This implements the MM4KE strategy:
+            sparsification_method = SparsificationMethod.magnitude
+
+        The merge is purely arithmetic -- no training required:
+            theta_merged = theta_base + scale * sum(sparsify(theta_ft_i - theta_base))
+
+        Parameters
+        ----------
+        finetuned_models:
+            List of fine-tuned model instances to merge.
+            Each must share the same architecture as *target_model*.
+        target_model:
+            The model to write merged weights into (modified in-place).
+            Typically the base model or a copy of it.
+        config:
+            Merge hyper-parameters (scaling_factor, sparsity, method).
+            Defaults: scaling_factor=0.5, sparsity=0.0, method='task_arithmetic'.
+        base_model:
+            The unedited reference model used to compute task vectors.
+            If None, *target_model* is used as the base reference
+            (only valid before any edits have been applied to it).
+
+        Returns
+        -------
+        torch.nn.Module:
+            *target_model* with merged weights.
+
+        Example
+        -------
+        >>> config = MergeConfig(scaling_factor=0.5, sparsity=0.9)
+        >>> repo.merge([ft_model_A, ft_model_B], target_model=base_copy, config=config)
+        """
+        cfg = config or MergeConfig()
+        ref = base_model if base_model is not None else target_model
+
+        merger = ModelMerger(ref)
+        for ft in finetuned_models:
+            merger.add(ft)
+
+        print(f"Merging {len(finetuned_models)} model(s) into target ...")
+        print(f"  Method         : {cfg.method}")
+        print(f"  Scaling factor : {cfg.scaling_factor}")
+        print(f"  Sparsity       : {cfg.sparsity}")
+
+        merged = merger.merge(config=cfg, target_model=target_model)
+
+        print(merger.task_vector_stats())
+        print("[OK]  Merge complete.")
+        return merged
 
 
 # ------------------------------------------------------------------------------

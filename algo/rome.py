@@ -75,6 +75,7 @@ class ROMEConfig:
         mom2_n_samples: int = 100_000,
         mom2_dtype: str = "float32",
         edit_layer: Optional[int] = None,
+        epochs: int = 1,
     ) -> None:
         self.v_lr = v_lr
         self.v_num_grad_steps = v_num_grad_steps
@@ -87,6 +88,7 @@ class ROMEConfig:
         self.mom2_n_samples = mom2_n_samples
         self.mom2_dtype = mom2_dtype
         self.edit_layer = edit_layer              # None -> use model default
+        self.epochs = epochs                      # outer epoch loop (MM4KE uses 5)
 
 
 # ------------------------------------------------------------------------------
@@ -275,46 +277,49 @@ class ROMEEditor:
             ref_logits = self.model(**prompt_enc).logits[0, -1].float()
         ref_probs = F.softmax(ref_logits, dim=-1).detach()
 
-        for step in range(self.cfg.v_num_grad_steps):
-            optimizer.zero_grad()
+        for epoch in range(self.cfg.epochs):
+            for step in range(self.cfg.v_num_grad_steps):
+                optimizer.zero_grad()
 
-            # Patch the residual stream at *layer* to v
-            last_pos = prompt_len - 1
+                # Patch the residual stream at *layer* to v
+                last_pos = prompt_len - 1
 
-            def patch_v(hidden):
-                h = hidden.clone()
-                h[0, last_pos, :] = v
-                return h
+                def patch_v(hidden):
+                    h = hidden.clone()
+                    h[0, last_pos, :] = v
+                    return h
 
-            logits = None
-            with nethook(self.model, {layer_path: patch_v}):
-                out = self.model(**prompt_enc)
-                logits = out.logits[0, last_pos].float()
+                logits = None
+                with nethook(self.model, {layer_path: patch_v}):
+                    out = self.model(**prompt_enc)
+                    logits = out.logits[0, last_pos].float()
 
-            probs = F.softmax(logits, dim=-1)
+                probs = F.softmax(logits, dim=-1)
 
-            # Cross-entropy loss: push target token
-            loss_ce = -torch.log(probs[target_id] + 1e-8)
+                # Cross-entropy loss: push target token
+                loss_ce = -torch.log(probs[target_id] + 1e-8)
 
-            # KL regularisation: don't deviate too far from reference
-            loss_kl = self.cfg.kl_factor * (
-                ref_probs * (torch.log(ref_probs + 1e-8) - torch.log(probs + 1e-8))
-            ).sum()
+                # KL regularisation: don't deviate too far from reference
+                loss_kl = self.cfg.kl_factor * (
+                    ref_probs * (torch.log(ref_probs + 1e-8) - torch.log(probs + 1e-8))
+                ).sum()
 
-            # Weight decay on v
-            loss_wd = self.cfg.v_weight_decay * (v ** 2).mean()
+                # Weight decay on v
+                loss_wd = self.cfg.v_weight_decay * (v ** 2).mean()
 
-            loss = loss_ce + loss_kl + loss_wd
-            loss.backward()
-            optimizer.step()
+                loss = loss_ce + loss_kl + loss_wd
+                loss.backward()
+                optimizer.step()
 
-            if (step + 1) % 5 == 0:
-                logger.debug(
-                    "  step %d  loss=%.4f  p(target)=%.4f",
-                    step + 1,
-                    loss.item(),
-                    probs[target_id].item(),
-                )
+                total_step = epoch * self.cfg.v_num_grad_steps + step + 1
+                if total_step % 5 == 0:
+                    logger.debug(
+                        "  epoch %d step %d  loss=%.4f  p(target)=%.4f",
+                        epoch + 1,
+                        step + 1,
+                        loss.item(),
+                        probs[target_id].item(),
+                    )
 
         return v.detach().cpu().float().numpy()  # [d_model]
 

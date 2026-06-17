@@ -124,6 +124,12 @@ _CONFIGS: Dict[str, ModelConfig] = {
         n_layers=28,
         edit_layers=list(range(8, 14)),
     ),
+    "qwen2_5": ModelConfig(
+        mlp_module_tmp="model.layers.{}.mlp.down_proj",
+        layer_module_tmp="model.layers.{}",
+        n_layers=32,                        # Qwen2.5-7B has 32 layers
+        edit_layers=list(range(10, 18)),    # mid-network causal layers
+    ),
     "qwen3": ModelConfig(
         mlp_module_tmp="model.layers.{}.mlp.down_proj",
         layer_module_tmp="model.layers.{}",
@@ -134,7 +140,13 @@ _CONFIGS: Dict[str, ModelConfig] = {
 
 
 def get_model_config(model: nn.Module) -> ModelConfig:
-    """Auto-detect model config from ``model.config``."""
+    """
+    Auto-detect model config from ``model.config``.
+
+    The registry entry provides the MLP path template and default edit layers.
+    n_layers is always read directly from the live model so that different
+    size variants (e.g. Qwen2.5-0.5B vs Qwen2.5-7B) are handled correctly.
+    """
     cfg = getattr(model, "config", None)
     if cfg is None:
         raise ValueError("Model has no .config attribute")
@@ -142,34 +154,52 @@ def get_model_config(model: nn.Module) -> ModelConfig:
     model_type = getattr(cfg, "model_type", "").lower()
     model_name = getattr(cfg, "_name_or_path", "").lower()
 
+    matched: ModelConfig | None = None
     for key, mcfg in _CONFIGS.items():
         if key in model_type or key in model_name:
-            return mcfg
+            matched = mcfg
+            break
 
-    # Heuristic fallback for LLaMA-family models
-    if hasattr(model, "model") and hasattr(model.model, "layers"):
-        n = len(model.model.layers)
-        return ModelConfig(
-            mlp_module_tmp="model.layers.{}.mlp.down_proj",
-            layer_module_tmp="model.layers.{}",
-            n_layers=n,
-            edit_layers=list(range(n // 4, n // 4 + 4)),
+    if matched is None:
+        # Heuristic fallback for LLaMA-family models
+        if hasattr(model, "model") and hasattr(model.model, "layers"):
+            n = len(model.model.layers)
+            return ModelConfig(
+                mlp_module_tmp="model.layers.{}.mlp.down_proj",
+                layer_module_tmp="model.layers.{}",
+                n_layers=n,
+                edit_layers=list(range(n // 4, n // 4 + 4)),
+            )
+
+        # Fallback for GPT-2-family models
+        if hasattr(model, "transformer") and hasattr(model.transformer, "h"):
+            n = len(model.transformer.h)
+            return ModelConfig(
+                mlp_module_tmp="transformer.h.{}.mlp.c_proj",
+                layer_module_tmp="transformer.h.{}",
+                n_layers=n,
+                edit_layers=list(range(n // 2, n // 2 + 4)),
+            )
+
+        raise ValueError(
+            f"Unknown model architecture (model_type={model_type!r}). "
+            "Register a ModelConfig in model_utils._CONFIGS."
         )
 
-    # Fallback for GPT-2-family models
-    if hasattr(model, "transformer") and hasattr(model.transformer, "h"):
-        n = len(model.transformer.h)
-        return ModelConfig(
-            mlp_module_tmp="transformer.h.{}.mlp.c_proj",
-            layer_module_tmp="transformer.h.{}",
-            n_layers=n,
-            edit_layers=list(range(n // 2, n // 2 + 4)),
+    # Always override n_layers from the live model so different-size
+    # variants of the same family work correctly (e.g. Qwen2.5-0.5B vs 7B).
+    actual_n = getattr(cfg, "num_hidden_layers", None)
+    if actual_n and actual_n != matched.n_layers:
+        mid = actual_n // 3
+        matched = ModelConfig(
+            mlp_module_tmp=matched.mlp_module_tmp,
+            layer_module_tmp=matched.layer_module_tmp,
+            n_layers=actual_n,
+            edit_layers=list(range(mid, mid + max(4, actual_n // 7))),
         )
 
-    raise ValueError(
-        f"Unknown model architecture (model_type={model_type!r}). "
-        "Register a ModelConfig in model_utils._CONFIGS."
-    )
+    return matched
+
 
 
 # ------------------------------------------------------------------------------

@@ -1,6 +1,7 @@
 from .rome import ROMEEditor, ROMEConfig
 from .memit import MEMITEditor
 from .revert import exact_revert, trace_and_revert, revert_chain
+from .merge import ModelMerger, MergeConfig
 
 __all__ = [
     "ROMEEditor",
@@ -9,4 +10,6 @@ __all__ = [
     "exact_revert",
     "trace_and_revert",
     "revert_chain",
-]
+    "ModelMerger",
+    "MergeConfig",
+]
