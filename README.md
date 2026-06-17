@@ -4,6 +4,19 @@ G4LLM brings **Git-style version control** to LLM knowledge editing.
 Track, apply, revert, branch, tag and merge targeted weight edits — just like
 commits in a source-code repository.
 
+**Imagine GitHub, but for model brains:**
+```text
+base_model (e.g., Qwen3-0.6B)
+ │
+ ├── commit: learned advanced physics concepts  <-- branch: physics-expert
+ │
+ ├── commit: removed outdated facts
+ │
+ └── commit: acquired Sanskrit translation skills <-- branch: translator
+      │
+      └── merge: combined physics + sanskrit models (Task Arithmetic)
+```
+
 ---
 
 ## Quick Start
