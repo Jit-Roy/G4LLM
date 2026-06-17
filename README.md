@@ -4,11 +4,7 @@ Git for Large Language Models
 
 G4LLM is an ROME-based application for sequential model editing. It is designed to help researchers and engineers track, apply, and manage targeted model edits over time.
 
-## Overview
-
-- Based on Rank-One Model Editing (ROME)
-- Supports sequential knowledge editing
-- Inspired by recent advances in model editing research
+Run test/demo.py to get a demo!
 
 ## References
 

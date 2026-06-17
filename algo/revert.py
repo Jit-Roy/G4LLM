@@ -9,7 +9,7 @@ Two complementary reversal strategies are provided:
 
 1. **Exact reversal** (``exact_revert``):
    Subtract the stored outer(u, v) from the weight matrix.
-   This perfectly undoes the edit — valid as long as the weight hasn't
+   This perfectly undoes the edit -- valid as long as the weight hasn't
    been modified by any other edit since.
 
 2. **Approximate reversal** (``trace_and_revert``):
@@ -33,9 +33,9 @@ from .model_utils import get_weight, set_weight
 logger = logging.getLogger(__name__)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Exact reversal
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 def exact_revert(model: torch.nn.Module, commit: Commit) -> None:
     """
@@ -56,12 +56,12 @@ def exact_revert(model: torch.nn.Module, commit: Commit) -> None:
         W = get_weight(model, delta.layer_name)
         W_new = delta.revert(W)
         set_weight(model, delta.layer_name, W_new)
-        logger.debug("  Reverted %s  ‖Δ‖_F=%.4f", delta.layer_name, delta.frobenius_norm())
+        logger.debug("  Reverted %s  ||Delta||_F=%.4f", delta.layer_name, delta.frobenius_norm())
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Approximate reversal (trace-and-revert)
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 def trace_and_revert(
     model: torch.nn.Module,
@@ -73,12 +73,12 @@ def trace_and_revert(
     """
     Approximate reversal that is robust to subsequent edits.
 
-    For each delta (u₀, v₀) stored in the commit:
-        1. Compute the current "contamination": Δ_current = outer(u₀, v₀)
-        2. Use gradient descent to find α ∈ [0, 1] such that
-           W_effective = W - α · Δ_current best restores the original output
+    For each delta (u0, v0) stored in the commit:
+        1. Compute the current "contamination": Delta_current = outer(u0, v0)
+        2. Use gradient descent to find alpha in [0, 1] such that
+           W_effective = W - alpha * Delta_current best restores the original output
            on the subject's prompt.
-        3. Apply W - α · Δ_current.
+        3. Apply W - alpha * Delta_current.
 
     Returns the *effective* deltas that were subtracted (useful for bookkeeping).
     """
@@ -112,21 +112,31 @@ def trace_and_revert(
         alpha = torch.tensor(1.0, requires_grad=True, device=device)
         optimizer = torch.optim.Adam([alpha], lr=lr)
 
+        # We need a differentiable forward pass through alpha.
+        # A forward hook replaces the weight output without breaking the graph.
+        mod = None
+        for name, m in model.named_modules():
+            if name == delta.layer_name:
+                mod = m
+                break
+
         for _ in range(n_steps):
             optimizer.zero_grad()
 
-            # Temporarily apply W - alpha * outer(u0, v0)
             W_trial = W - alpha.clamp(0, 1) * torch.outer(u0, v0)
 
-            # Patch the weight, run forward, restore
-            with torch.no_grad():
-                orig = get_weight(model, delta.layer_name).data.clone()
-                set_weight(model, delta.layer_name, W_trial.detach())
+            # Use a hook to inject W_trial into the linear layer's output
+            # This preserves the gradient path: alpha -> W_trial -> hook output -> logits -> loss
+            def make_hook(W_t):
+                def hook(module, inp, out):
+                    # Replace linear output: inp[0] @ W_t.T (for nn.Linear weight shape [out, in])
+                    x = inp[0] if isinstance(inp, tuple) else inp
+                    return x @ W_t.T
+                return hook
 
+            h = mod.register_forward_hook(make_hook(W_trial))
             logits = model(**enc).logits[0, -1].float()
-
-            with torch.no_grad():
-                set_weight(model, delta.layer_name, orig)
+            h.remove()
 
             loss = -torch.log_softmax(logits, dim=-1)[target_id]
             loss.backward()
@@ -144,7 +154,7 @@ def trace_and_revert(
         eff = WeightDelta(layer_name=delta.layer_name, u=u_eff, v=v_eff)
         effective_deltas.append(eff)
         logger.debug(
-            "  Layer %s  α=%.3f  ‖Δ‖_F=%.4f",
+            "  Layer %s  alpha=%.3f  ||Delta||_F=%.4f",
             delta.layer_name,
             alpha_val,
             eff.frobenius_norm(),
@@ -153,9 +163,9 @@ def trace_and_revert(
     return effective_deltas
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Revert a chain of commits (sequential undo)
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 def revert_chain(
     model: torch.nn.Module,
@@ -164,7 +174,7 @@ def revert_chain(
     tokenizer=None,
 ) -> None:
     """
-    Revert a list of commits in *reverse* order (LIFO — like ``git revert``).
+    Revert a list of commits in *reverse* order (LIFO -- like ``git revert``).
 
     Parameters
     ----------

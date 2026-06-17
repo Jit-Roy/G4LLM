@@ -1,5 +1,5 @@
 """
-G4LLMRepo — the central repository object.
+G4LLMRepo -- the central repository object.
 
 Analogous to the Git repository: manages the object store,
 branches, HEAD, index, and the connection to a live model.
@@ -51,14 +51,14 @@ class G4LLMRepo:
     The on-disk layout mirrors Git::
 
         .g4llm/
-        ├── config.json          # model name, default author, algorithm
-        ├── HEAD                 # current branch pointer
-        ├── index.json           # staging area
-        ├── objects/             # one JSON file per commit (keyed by hash)
-        └── refs/
-            └── heads/
-                ├── main
-                └── <branch>
+        +-- config.json          # model name, default author, algorithm
+        +-- HEAD                 # current branch pointer
+        +-- index.json           # staging area
+        +-- objects/             # one JSON file per commit (keyed by hash)
+        +-- refs/
+            +-- heads/
+                +-- main
+                +-- <branch>
     """
 
     def __init__(self, repo_path: Path) -> None:
@@ -189,7 +189,7 @@ class G4LLMRepo:
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        logger.info("Loading model %r on %s …", name, device)
+        logger.info("Loading model %r on %s ...", name, device)
         tokenizer = AutoTokenizer.from_pretrained(name)
         tokenizer.padding_side = "right"
         if tokenizer.pad_token is None:
@@ -285,7 +285,7 @@ class G4LLMRepo:
             # For MEMIT, use a synthetic combined request
             c.message = message or (
                 f"MEMIT batch: "
-                + ", ".join(f"{r.subject}→{r.target_new}" for r in requests)
+                + ", ".join(f"{r.subject}->{r.target_new}" for r in requests)
             )
             commits.append(c)
         else:
@@ -293,7 +293,7 @@ class G4LLMRepo:
             for req in requests:
                 deltas = editor.edit(req, layer=layer)
                 msg = message or (
-                    f"Edit: '{req.subject}' | {req.relation} → '{req.target_new}'"
+                    f"Edit: '{req.subject}' | {req.relation} -> '{req.target_new}'"
                     if auto_message
                     else ""
                 )
@@ -337,8 +337,6 @@ class G4LLMRepo:
             algorithm=algorithm,
         )
         if evaluate:
-            from .eval.metrics import evaluate_edit
-            # We'd need a before-model here; skip full eval for now
             from .eval.metrics import compute_efficacy, compute_generalization
             c.efficacy = compute_efficacy(model, tokenizer, req, device)
             c.generalization = compute_generalization(model, tokenizer, req, device)
@@ -428,7 +426,7 @@ class G4LLMRepo:
                 c = self._load_commit(current_hash)
             except KeyError:
                 break
-            marker = "HEAD → " if current_hash == tip else ""
+            marker = "HEAD -> " if current_hash == tip else ""
             lines.append(f"{marker}{c.one_liner()}")
             current_hash = c.parent_hash
         return "\n".join(lines) if lines else "(no commits)"
@@ -535,7 +533,7 @@ class G4LLMRepo:
         tip = self._branches.tip(branch)
         tip_str = tip[:7] if tip else "no commits"
         lines = [
-            f"On branch {branch}  (HEAD → {tip_str})",
+            f"On branch {branch}  (HEAD -> {tip_str})",
             "",
             self._index.status(),
         ]
@@ -593,9 +591,9 @@ class G4LLMRepo:
         print(f"Tagged {h[:7]} as '{name}'")
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Internal helpers
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 def _copy_weights(src: torch.nn.Module, dst: torch.nn.Module) -> None:
     """Copy all parameters from *src* to *dst* in-place."""

@@ -2,14 +2,14 @@
 Model utilities for ROME-based editing.
 
 Handles the differences between GPT-2, GPT-J, LLaMA/LLaMA-2/LLaMA-3,
-Mistral, Phi and similar causal-LM architectures.
+Mistral, Phi Qwen Family and similar causal-LM architectures.
 
 Key abstractions
 ----------------
-* ``get_module``  — retrieve any sub-module by dotted name
-* ``get_weight`` / ``set_weight``  — read / patch a weight tensor in-place
-* ``nethook``     — context-manager to intercept & patch activations mid-forward
-* ``ModelConfig`` — per-model-family constants (which layer to target, etc.)
+* ``get_module``  -- retrieve any sub-module by dotted name
+* ``get_weight`` / ``set_weight``  -- read / patch a weight tensor in-place
+* ``nethook``     -- context-manager to intercept & patch activations mid-forward
+* ``ModelConfig`` -- per-model-family constants (which layer to target, etc.)
 """
 
 from __future__ import annotations
@@ -24,9 +24,9 @@ import torch
 import torch.nn as nn
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Per-model configuration
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 @dataclass
 class ModelConfig:
@@ -110,6 +110,26 @@ _CONFIGS: Dict[str, ModelConfig] = {
         n_layers=32,
         edit_layers=list(range(4, 8)),
     ),
+    # Qwen / Qwen2 / Qwen3 family (LLaMA-style MLP with down_proj)
+    # Qwen3-0.6B: 28 layers, hidden=1024, intermediate=3072
+    "qwen": ModelConfig(
+        mlp_module_tmp="model.layers.{}.mlp.down_proj",
+        layer_module_tmp="model.layers.{}",
+        n_layers=28,
+        edit_layers=list(range(8, 14)),
+    ),
+    "qwen2": ModelConfig(
+        mlp_module_tmp="model.layers.{}.mlp.down_proj",
+        layer_module_tmp="model.layers.{}",
+        n_layers=28,
+        edit_layers=list(range(8, 14)),
+    ),
+    "qwen3": ModelConfig(
+        mlp_module_tmp="model.layers.{}.mlp.down_proj",
+        layer_module_tmp="model.layers.{}",
+        n_layers=28,
+        edit_layers=list(range(8, 14)),
+    ),
 }
 
 
@@ -152,9 +172,9 @@ def get_model_config(model: nn.Module) -> ModelConfig:
     )
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Module / weight access
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 def get_module(model: nn.Module, path: str) -> nn.Module:
     """
@@ -183,9 +203,9 @@ def set_weight(model: nn.Module, path: str, W: torch.Tensor) -> None:
         mod.weight.copy_(W)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Activation hooks
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 @contextmanager
 def nethook(
@@ -198,7 +218,7 @@ def nethook(
     Parameters
     ----------
     patch_spec:
-        Mapping from dotted module path → callable.
+        Mapping from dotted module path -> callable.
         The callable receives the module's output tensor and must return
         a (possibly modified) tensor.  Use ``lambda x: x`` to read without
         patching.
@@ -206,7 +226,7 @@ def nethook(
     Yields
     ------
     collected:
-        Dict mapping path → list of captured tensors (one per forward call).
+        Dict mapping path -> list of captured tensors (one per forward call).
 
     Example
     -------
@@ -242,9 +262,9 @@ def nethook(
             h.remove()
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Tokenisation helpers
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 def find_token_range(
     tokenizer,

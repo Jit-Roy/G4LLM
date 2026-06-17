@@ -1,15 +1,15 @@
 """
 WeightDelta: a rank-1 update to a single weight matrix.
 
-This is G4LLM's equivalent of a Git *diff hunk* — the minimal,
+This is G4LLM's equivalent of a Git *diff hunk* -- the minimal,
 reversible change to model weights that implements one knowledge edit.
 
 ROME represents each edit as:
     W_new = W_old + outer(u, v)
 
 where
-    u = (v* - W_old @ k*) / (k̂ · k*)        shape: [d_out]
-    v = C⁻¹ @ k*                              shape: [d_in]
+    u = (v* - W_old @ k*) / (k * k*)        shape: [d_out]
+    v = C-1 @ k*                              shape: [d_in]
     k* = MLP intermediate activation for subject
     v* = optimised target value vector
     C  = empirical covariance of MLP activations
@@ -49,14 +49,14 @@ class WeightDelta:
     # ------------------------------------------------------------------
 
     def apply(self, W: "torch.Tensor") -> "torch.Tensor":
-        """Return *W + outer(u, v)* — the patched weight matrix."""
+        """Return *W + outer(u, v)* -- the patched weight matrix."""
         import torch
         u_t = torch.tensor(self.u, dtype=W.dtype, device=W.device)
         v_t = torch.tensor(self.v, dtype=W.dtype, device=W.device)
         return W + torch.outer(u_t, v_t)
 
     def revert(self, W: "torch.Tensor") -> "torch.Tensor":
-        """Return *W − outer(u, v)* — undo the patch exactly."""
+        """Return *W - outer(u, v)* -- undo the patch exactly."""
         import torch
         u_t = torch.tensor(self.u, dtype=W.dtype, device=W.device)
         v_t = torch.tensor(self.v, dtype=W.dtype, device=W.device)
@@ -67,7 +67,7 @@ class WeightDelta:
     # ------------------------------------------------------------------
 
     def frobenius_norm(self) -> float:
-        """‖outer(u, v)‖_F = ‖u‖ · ‖v‖"""
+        """||outer(u, v)||_F = ||u|| * ||v||"""
         return float(np.linalg.norm(self.u) * np.linalg.norm(self.v))
 
     def rank(self) -> int:
@@ -77,7 +77,7 @@ class WeightDelta:
     def summary(self) -> str:
         return (
             f"WeightDelta(layer={self.layer_name!r}, "
-            f"‖Δ‖_F={self.frobenius_norm():.4f}, "
+            f"||Delta||_F={self.frobenius_norm():.4f}, "
             f"shape=[{len(self.u)}, {len(self.v)}])"
         )
 

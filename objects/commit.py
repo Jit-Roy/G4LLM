@@ -95,7 +95,7 @@ class Commit:
 
     def summary(self) -> str:
         req = self.edit_request
-        old = f" ({req.target_old} →)" if req.target_old else ""
+        old = f" ({req.target_old} ->)" if req.target_old else ""
         layers = ", ".join(d.layer_name for d in self.deltas)
         metrics = ""
         if self.efficacy is not None:

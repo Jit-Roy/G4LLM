@@ -1,5 +1,5 @@
 """
-MEMIT — Mass-Editing Memory in a Transformer
+MEMIT -- Mass-Editing Memory in a Transformer
 =============================================
 
 Implementation of the algorithm described in:
@@ -13,13 +13,13 @@ at a single layer.  This avoids destructive interference between edits.
 Algorithm
 ---------
 For a batch of n edits {(k_i*, v_i*)}, MEMIT finds weight updates
-{ΔW_l} for layers L = {l_1, …, l_m} that jointly satisfy:
+{DeltaW_l} for layers L = {l_1, ..., l_m} that jointly satisfy:
 
-    W_l + ΔW_l) K_l ≈ V_l    for all l ∈ L
+    W_l + DeltaW_l) K_l ~= V_l    for all l in L
 
 where K_l and V_l are the stacked key and (residual) value matrices.
 
-Each ΔW_l is a low-rank matrix: in the simplest form a sum of rank-1
+Each DeltaW_l is a low-rank matrix: in the simplest form a sum of rank-1
 updates, one per edit, spread across layers.
 """
 
@@ -117,11 +117,11 @@ class MEMITEditor(ROMEEditor):
 
         for idx, layer in enumerate(self.memit_layers):
             mlp_path = self.model_cfg.mlp_path(layer)
-            W = get_weight(self.model, mlp_path).float().cpu().numpy()
+            W = get_weight(self.model, mlp_path).detach().float().cpu().numpy()
             # W: [d_model, d_inner]
 
             # How much of the residual to resolve at this layer
-            # (linearly decreasing contribution — simplest MEMIT schedule)
+            # (linearly decreasing contribution -- simplest MEMIT schedule)
             alpha = 1.0 / (n_layers - idx)
             V_layer = V_residual * alpha     # [d_model, n]
 

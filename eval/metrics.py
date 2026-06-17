@@ -13,9 +13,9 @@ Generalization (G)
 
 Specificity (S)
     Are unrelated facts unchanged?
-    S = 1 − mean |P_new(tok | control) − P_old(tok | control)| over control prompts.
+    S = 1 - mean |P_new(tok | control) - P_old(tok | control)| over control prompts.
 
-All metrics ∈ [0, 1], higher is better.
+All metrics in [0, 1], higher is better.
 """
 
 from __future__ import annotations
@@ -66,9 +66,9 @@ class EditMetrics:
         )
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Core probability utilities
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 @torch.no_grad()
 def token_prob(
@@ -115,9 +115,9 @@ def full_distribution(
     return F.softmax(logits, dim=-1)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Metric computation
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 def compute_efficacy(
     model: torch.nn.Module,

@@ -1,7 +1,7 @@
 """
 Branch: a named mutable pointer to a commit hash.
 
-Mirrors Git's branch model exactly — a branch is just a file whose
+Mirrors Git's branch model exactly -- a branch is just a file whose
 content is a commit hash.  HEAD points to the current branch.
 """
 
@@ -21,11 +21,11 @@ class BranchManager:
     Layout::
 
         .g4llm/
-        ├── HEAD              → "refs/heads/main"
-        └── refs/
-            └── heads/
-                ├── main      → <commit-hash>
-                └── <branch>  → <commit-hash>
+        +-- HEAD              -> "refs/heads/main"
+        +-- refs/
+            +-- heads/
+                +-- main      -> <commit-hash>
+                +-- <branch>  -> <commit-hash>
     """
 
     def __init__(self, g4llm_dir: Path) -> None:
@@ -47,7 +47,7 @@ class BranchManager:
         # "refs/heads/<name>"
         if ref.startswith("refs/heads/"):
             return ref[len("refs/heads/"):]
-        return ref  # detached HEAD — return the hash directly
+        return ref  # detached HEAD -- return the hash directly
 
     def set_head(self, branch_name: str) -> None:
         self._head_file.write_text(f"refs/heads/{branch_name}")
@@ -128,5 +128,5 @@ class BranchManager:
             prefix = "* " if name == current else "  "
             tip = self.tip(name)
             tip_str = tip[:7] if tip else "(no commits)"
-            lines.append(f"{prefix}{name}  →  {tip_str}")
+            lines.append(f"{prefix}{name}  ->  {tip_str}")
         return lines

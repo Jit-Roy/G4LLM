@@ -1,7 +1,7 @@
 """
 EditRequest: specification for a single model knowledge edit.
 
-Analogous to a "diff" or "patch" in Git — the *intent* of the change,
+Analogous to a "diff" or "patch" in Git -- the *intent* of the change,
 before it is applied to model weights.
 """
 
@@ -87,7 +87,7 @@ class EditRequest:
         )
 
     def __repr__(self) -> str:
-        old = f" ({self.target_old} →)" if self.target_old else ""
+        old = f" ({self.target_old} ->)" if self.target_old else ""
         return (
             f"EditRequest({self.id!r}: "
             f"'{self.subject}' | {self.relation}{old} '{self.target_new}')"

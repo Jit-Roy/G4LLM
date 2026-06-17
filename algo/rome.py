@@ -1,5 +1,5 @@
 """
-ROME — Rank-One Model Editing
+ROME -- Rank-One Model Editing
 ==============================
 
 Implementation of the algorithm described in:
@@ -8,23 +8,23 @@ Implementation of the algorithm described in:
 
 Mathematical summary
 --------------------
-Given a target MLP output-projection W ∈ R^{d_model × d_inner}:
+Given a target MLP output-projection W in R^{d_model x d_inner}:
 
-1.  Compute the key vector k* ∈ R^{d_inner}
+1.  Compute the key vector k* in R^{d_inner}
     the MLP's intermediate activation (after the activation function)
     when the prompt containing the subject is fed through the model.
 
-2.  Optimise v* ∈ R^{d_model} by gradient descent so that, when
+2.  Optimise v* in R^{d_model} by gradient descent so that, when
     inserted into the residual stream at the target layer, the model
     outputs the desired target token with high probability.
 
-3.  Load (or estimate) the covariance matrix C = E[k kᵀ] ∈ R^{d_inner×d_inner}
+3.  Load (or estimate) the covariance matrix C = E[k kT] in R^{d_innerxd_inner}
     of MLP intermediate activations over a reference corpus.
 
 4.  Compute the rank-1 update:
-        k̂ = C⁻¹ k*
-        u = (v* − W k*) / (k̂ · k*)      # value direction  [d_model]
-        v = k̂                              # key   direction  [d_inner]
+        k = C-1 k*
+        u = (v* - W k*) / (k * k*)      # value direction  [d_model]
+        v = k                              # key   direction  [d_inner]
         W_new = W_old + outer(u, v)
 
 The WeightDelta returned stores (u, v) so the update can be applied
@@ -55,9 +55,9 @@ from .model_utils import (
 logger = logging.getLogger(__name__)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # ROME configuration
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 class ROMEConfig:
     """Hyper-parameters for one ROME run."""
@@ -86,12 +86,12 @@ class ROMEConfig:
         self.mom2_dataset = mom2_dataset
         self.mom2_n_samples = mom2_n_samples
         self.mom2_dtype = mom2_dtype
-        self.edit_layer = edit_layer              # None → use model default
+        self.edit_layer = edit_layer              # None -> use model default
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 # Main ROME editor
-# ──────────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 
 class ROMEEditor:
     """
@@ -119,7 +119,7 @@ class ROMEEditor:
         self.model_cfg: ModelConfig = get_model_config(model)
         self.device = next(model.parameters()).device
 
-        # Cached covariance matrices: layer_path → torch.Tensor [d_inner, d_inner]
+        # Cached covariance matrices: layer_path -> torch.Tensor [d_inner, d_inner]
         self._cov_cache: dict = {}
 
     # ------------------------------------------------------------------
@@ -193,7 +193,7 @@ class ROMEEditor:
         layer: int,
     ) -> np.ndarray:
         """
-        Extract k* — the MLP intermediate activation for the subject.
+        Extract k* -- the MLP intermediate activation for the subject.
 
         We collect the hidden state entering the MLP output projection
         (i.e. after W_in and the activation function) at the last token
@@ -210,9 +210,9 @@ class ROMEEditor:
         mlp_path = self.model_cfg.mlp_path(layer)
         keys_collected: List[torch.Tensor] = []
 
-        def capture_input(module, inp, out):
-            # inp is a tuple; first element is the tensor we want
-            x = inp[0] if isinstance(inp, tuple) else inp
+        def capture_input(module, args):
+            # args is a tuple of positional inputs; first element is the tensor
+            x = args[0] if isinstance(args, tuple) else args
             keys_collected.append(x[:, subject_tok_pos, :].detach().cpu())
 
         hook = get_module(self.model, mlp_path).register_forward_pre_hook(
@@ -236,7 +236,7 @@ class ROMEEditor:
         k_star: np.ndarray,
     ) -> np.ndarray:
         """
-        Optimise v* ∈ R^{d_model} so that inserting it into the residual
+        Optimise v* in R^{d_model} so that inserting it into the residual
         stream at *layer* causes the model to predict *target_new*.
 
         The optimisation is: minimise CE-loss + KL-reg + weight-decay
@@ -245,7 +245,7 @@ class ROMEEditor:
         prompt = request.to_prompt()
         target = request.target_new
 
-        # Tokenise — build (prompt + " " + target) so the last token of
+        # Tokenise -- build (prompt + " " + target) so the last token of
         # target is what we optimise for
         target_ids = self.tokenizer.encode(
             " " + target, add_special_tokens=False
@@ -332,12 +332,12 @@ class ROMEEditor:
         """
         Given k*, v* and the current W, compute (u, v) such that:
             W_new = W_old + outer(u, v)
-            W_new @ k* ≈ v*
+            W_new @ k* ~= v*
         """
-        W = get_weight(self.model, mlp_path).float().cpu().numpy()
+        W = get_weight(self.model, mlp_path).detach().float().cpu().numpy()
         # W shape: [d_model, d_inner]
 
-        # Get or estimate covariance C ∈ R^{d_inner × d_inner}
+        # Get or estimate covariance C in R^{d_inner x d_inner}
         C_inv_k = self._get_cov_inv_times_k(layer, k_star)  # [d_inner]
 
         # Current residual: how far is W k* from v*?
@@ -360,7 +360,7 @@ class ROMEEditor:
 
     def _get_cov_inv_times_k(self, layer: int, k: np.ndarray) -> np.ndarray:
         """
-        Return C⁻¹ k  where C is the empirical covariance of MLP keys.
+        Return C-1 k  where C is the empirical covariance of MLP keys.
 
         Uses cached value if available.  Falls back to the identity (i.e.
         raw k) when no statistics have been computed.
@@ -379,7 +379,7 @@ class ROMEEditor:
                 mlp_path,
             )
 
-        return k.copy()  # identity fallback: C⁻¹ = I
+        return k.copy()  # identity fallback: C-1 = I
 
     def compute_covariance_stats(
         self,
@@ -390,7 +390,7 @@ class ROMEEditor:
         """
         Estimate the MLP key covariance matrix C for *layer* from *texts*.
 
-        After calling this, ``edit()`` will use the proper C⁻¹ k* term.
+        After calling this, ``edit()`` will use the proper C-1 k* term.
 
         Parameters
         ----------
@@ -402,12 +402,12 @@ class ROMEEditor:
             Tokenisation batch size.
         """
         mlp_path = self.model_cfg.mlp_path(layer)
-        logger.info("Computing key covariance for %s …", mlp_path)
+        logger.info("Computing key covariance for %s ...", mlp_path)
 
         keys: List[torch.Tensor] = []
 
-        def collect_key(module, inp, out):
-            x = inp[0] if isinstance(inp, tuple) else inp
+        def collect_key(module, args):
+            x = args[0] if isinstance(args, tuple) else args
             keys.append(x.detach().reshape(-1, x.shape[-1]).cpu().float())
 
         hook = get_module(self.model, mlp_path).register_forward_pre_hook(
